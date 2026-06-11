@@ -1,0 +1,369 @@
+// ═══════════════════════════════════════════════════════════════
+// SplitX — Prisma Schema
+// Database: PostgreSQL (Neon)
+// ═══════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── NextAuth Models ──────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([email, token])
+}
+
+// ── App Models ───────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  phone         String?
+  upiId         String?
+
+  accounts    Account[]
+  sessions    Session[]
+
+  // App relations
+  ownedGroups    Group[]        @relation("GroupOwner")
+  memberships    GroupMember[]
+  paidTxns       Transaction[]  @relation("Payer")
+  splitItems     SplitItem[]
+  settleFrom     Settlement[]   @relation("SettleFrom")
+  settleTo       Settlement[]   @relation("SettleTo")
+  contacts       Contact[]      @relation("UserContacts")
+  linkedContacts Contact[]      @relation("LinkedContacts")
+
+  // Invitation relations
+  invitationsSent     GroupInvitation[] @relation("InvitationsSent")
+  invitationsReceived GroupInvitation[] @relation("InvitationsReceived")
+
+  // Phase 2 relations
+  notifications      Notification[] @relation("NotificationRecipient")
+  actorNotifications Notification[] @relation("NotificationActor")
+  budgets        Budget[]
+  auditLogs      AuditLog[]
+  chatMessages   ChatMessage[]
+  groupMessages  GroupMessage[] @relation("GroupMessagesSent")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  emoji       String   @default("✈️")
+  inviteCode  String   @unique @default(cuid())
+  ownerId     String
+
+  owner       User              @relation("GroupOwner", fields: [ownerId], references: [id])
+  members     GroupMember[]
+  trips       Trip[]
+  invitations GroupInvitation[]
+  messages    GroupMessage[]
+
+  deletedAt DateTime? // soft delete
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String   @default("member") // "admin" | "member"
+  nickname String?
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime? // null = still active member
+
+  @@unique([groupId, userId])
+}
+
+model Trip {
+  id          String    @id @default(cuid())
+  groupId     String
+  title       String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  currency    String    @default("INR")
+  isActive    Boolean   @default(true)
+
+  group        Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  settlements  Settlement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Transaction {
+  id              String  @id @default(cuid())
+  tripId          String
+  payerId         String
+  amount          Int     // stored in paise (₹1 = 100 paise) — converted amount
+  originalAmount  Int?    // original amount in paise if foreign currency
+  currency        String  @default("INR") // "INR" | "USD" | "EUR" etc.
+  exchangeRate    Float?  // rate used for conversion (e.g. 83.5 for USD→INR)
+  title           String
+  description     String?
+  category        String  @default("general")
+  method          String  @default("cash")
+  receiptUrl      String?
+  splitType       String  @default("equal") // "equal" | "percentage" | "custom" | "items"
+  importSource    String? // "csv_import" if imported, null if manual
+
+  trip   Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  payer  User @relation("Payer", fields: [payerId], references: [id])
+  splits SplitItem[]
+  messages GroupMessage[]
+
+  date      DateTime  @default(now())
+  deletedAt DateTime? // soft delete
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tripId])
+  @@index([tripId, deletedAt])
+  @@index([payerId])
+}
+
+model SplitItem {
+  id            String @id @default(cuid())
+  transactionId String
+  userId        String
+  amount        Int    // amount this user owes (in paise)
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@unique([transactionId, userId])
+  @@index([transactionId])
+  @@index([userId])
+}
+
+model Settlement {
+  id        String @id @default(cuid())
+  tripId    String
+  fromId    String // debtor
+  toId      String // creditor
+  amount    Int    // in paise
+  status    String @default("pending") // "pending" | "initiated" | "paid_pending" | "confirmed" | "completed" | "cancelled"
+  method    String?
+  note      String?
+  utrNumber String? // UPI transaction reference for soft verification
+
+  trip     Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  from     User           @relation("SettleFrom", fields: [fromId], references: [id])
+  to       User           @relation("SettleTo", fields: [toId], references: [id])
+  messages GroupMessage[]
+
+  deletedAt DateTime? // soft delete
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tripId])
+  @@index([tripId, status])
+  @@index([fromId])
+  @@index([toId])
+}
+
+model Contact {
+  id       String  @id @default(cuid())
+  ownerId  String
+  name     String
+  email    String
+  phone    String?
+  image    String?
+
+  owner User @relation("UserContacts", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // If this contact is a registered user, link to them
+  linkedUserId String?
+  linkedUser   User?   @relation("LinkedContacts", fields: [linkedUserId], references: [id])
+
+  addedAt DateTime @default(now())
+
+  @@unique([ownerId, email])
+}
+
+// ── Group Invitations ────────────────────────────────────────
+
+model GroupInvitation {
+  id        String   @id @default(cuid())
+  groupId   String
+  inviterId String
+  inviteeId String
+  status    String   @default("pending") // "pending" | "accepted" | "declined"
+
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  inviter User  @relation("InvitationsSent", fields: [inviterId], references: [id])
+  invitee User  @relation("InvitationsReceived", fields: [inviteeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, inviteeId])
+}
+
+// ── Phase 2: Notifications ──────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  actorId   String?  // Optional relation to the user who triggered the notification
+  type      String   // "payment_reminder" | "new_expense" | "settlement_completed" | "group_activity"
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  link      String?  // deep link e.g. "/settlements"
+
+  user      User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// ── Phase 2: Budget ─────────────────────────────────────────
+
+model Budget {
+  id       String @id @default(cuid())
+  userId   String
+  category String
+  amount   Int    // monthly limit in paise
+  month    String // "2026-02" format
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, month])
+}
+
+// ── Phase 2: Audit Log ──────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   // "create" | "update" | "delete"
+  entityType String   // "transaction" | "settlement" | "group"
+  entityId   String
+  details    Json?    // { before: {...}, after: {...} }
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// ── Phase 2: AI Chat ────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String   // "user" | "assistant"
+  content   String   @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// ── Phase 2: Group Chat ─────────────────────────────────────
+
+model GroupMessage {
+  id        String   @id @default(cuid())
+  groupId   String
+  senderId  String
+  content   String   @db.Text
+  type      String   @default("text") // "text" | "payment_reminder" | "expense_added" | "system"
+
+  // For payment_reminder type: link to the settlement
+  settlementId  String?
+  // For expense_added type: link to the transaction
+  transactionId String?
+
+  group       Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender      User         @relation("GroupMessagesSent", fields: [senderId], references: [id])
+  settlement  Settlement?  @relation(fields: [settlementId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId, createdAt])
+}
+
+// ── CSV Import Reports ──────────────────────────────────────
+
+model ImportReport {
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String
+  fileName    String
+  totalRows   Int
+  imported    Int
+  skipped     Int
+  anomalies   Json     // Array of { type, row, description, action, resolved }
+  summary     Json     // { expenses: N, settlements: N, members: [...] }
+  status      String   @default("completed") // "completed" | "partial" | "failed"
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([groupId])
+}
