@@ -1,0 +1,365 @@
+/* ═══════════════════════════════════════════════════════════════
+   Quick Add Transaction — Mobile-First Premium
+   Compact, well-spaced layout that fits on one screen
+   ═══════════════════════════════════════════════════════════════ */
+
+.quickAdd {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 120px);
+    min-height: calc(100dvh - 120px);
+    gap: 21px;
+    padding: 6px 2px 0;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* ── Amount Card (Glassmorphic) ── */
+.amountCard {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 12px;
+    margin: 0 4px;
+    border-radius: 20px;
+    background: linear-gradient(145deg,
+            rgba(var(--accent-500-rgb), 0.07),
+            rgba(var(--accent-500-rgb), 0.02) 60%,
+            transparent);
+    border: 1.5px solid rgba(var(--accent-500-rgb), 0.15);
+    backdrop-filter: blur(12px) saturate(1.3);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    overflow: hidden;
+}
+
+.amountCardGlow {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 180px;
+    height: 100px;
+    background: radial-gradient(ellipse, rgba(var(--accent-500-rgb), 0.12), transparent 70%);
+    pointer-events: none;
+}
+
+/* ── Amount Display ── */
+.amountDisplay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0;
+    position: relative;
+    width: 100%;
+}
+
+.currencySign {
+    font-size: 1.4rem;
+    color: var(--accent-400);
+    font-weight: 700;
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+
+.amountInput {
+    font-size: 2.6rem;
+    font-weight: 800;
+    color: var(--fg-primary);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-align: center;
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    max-width: 220px;
+    caret-color: var(--accent-500);
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.amountInput::-webkit-outer-spin-button,
+.amountInput::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.amountInput::placeholder {
+    color: var(--fg-muted);
+    opacity: 0.5;
+}
+
+.expressionPreview {
+    font-size: 12px;
+    color: var(--accent-500);
+    font-weight: 600;
+    text-align: center;
+    min-height: 16px;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+    margin-top: 2px;
+}
+
+/* ── Title Input ── */
+.titleInput {
+    text-align: left;
+    border: 1.5px solid var(--border-subtle);
+    background: var(--surface-card, rgba(255, 255, 255, 0.03));
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--fg-primary);
+    width: 100%;
+    padding: 10px 14px;
+    outline: none;
+    border-radius: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.titleInput:focus {
+    border-color: rgba(var(--accent-500-rgb), 0.4);
+    box-shadow: 0 0 0 3px rgba(var(--accent-500-rgb), 0.06);
+}
+
+.titleInput::placeholder {
+    color: var(--fg-muted);
+    opacity: 0.6;
+}
+
+/* ── Category & Payer Row ── */
+.metaRow {
+    display: flex;
+    gap: 8px;
+    padding: 0 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.metaRow::-webkit-scrollbar {
+    display: none;
+}
+
+/* ── Chip (tappable pill) ── */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 12px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    border: 1.5px solid var(--border-default);
+    background: var(--surface-card, rgba(255, 255, 255, 0.04));
+    color: var(--fg-secondary);
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    flex-shrink: 0;
+}
+
+.chip:hover,
+.chip:active {
+    border-color: rgba(var(--accent-500-rgb), 0.3);
+    background: rgba(var(--accent-500-rgb), 0.05);
+    color: var(--accent-400);
+}
+
+.chipActive {
+    border-color: var(--accent-500);
+    background: rgba(var(--accent-500-rgb), 0.10);
+    color: var(--accent-500);
+    box-shadow: 0 2px 10px rgba(var(--accent-500-rgb), 0.12);
+}
+
+/* ── Section Label ── */
+.sectionLabel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--fg-tertiary);
+    opacity: 0.7;
+}
+
+/* ── Numpad (4-column with operators) ── */
+.numpad {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border-subtle);
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.numKey {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 52px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--fg-primary);
+    background: var(--surface-card);
+    cursor: pointer;
+    border: none;
+    user-select: none;
+    transition: background 0.1s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.numKey:active {
+    background: var(--bg-tertiary);
+}
+
+.numKeyOperator {
+    color: var(--accent-500);
+    font-weight: 700;
+    font-size: 20px;
+    background: rgba(var(--accent-500-rgb), 0.03);
+}
+
+.numKeyOperator:active {
+    background: rgba(var(--accent-500-rgb), 0.10);
+}
+
+.numKeyDelete {
+    color: var(--color-error, #ef4444);
+}
+
+.numKeyEquals {
+    background: linear-gradient(135deg, var(--accent-500), var(--accent-600, var(--accent-500)));
+    color: #fff;
+    font-weight: 700;
+    font-size: 20px;
+}
+
+.numKeyEquals:active {
+    opacity: 0.85;
+}
+
+/* ── Submit Button ── */
+.submitBtn {
+    margin: 6px 8px;
+    margin-bottom: 12px;
+}
+
+/* ── Category Picker Sheet ── */
+.categoryGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.categoryItem {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    border: 1.5px solid var(--border-default);
+    background: var(--surface-input);
+    transition: all 0.15s ease;
+}
+
+.categoryItem:active,
+.categoryItemActive {
+    border-color: var(--accent-500);
+    background: rgba(var(--accent-500-rgb), 0.1);
+}
+
+.categoryEmoji {
+    font-size: 24px;
+}
+
+.categoryLabel {
+    font-size: 11px;
+    color: var(--fg-secondary);
+    font-weight: 500;
+}
+
+/* ── Payer Selector ── */
+.payerGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.payerItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    border: 1.5px solid var(--border-default);
+    background: var(--surface-input);
+    transition: all 0.15s ease;
+}
+
+.payerItem:active,
+.payerItemActive {
+    border-color: var(--accent-500);
+    background: rgba(var(--accent-500-rgb), 0.1);
+}
+
+.payerName {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--fg-primary);
+}
+
+/* ── Split indicator ── */
+.splitInfo {
+    text-align: center;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--fg-tertiary);
+}
+
+.splitAmount {
+    color: var(--accent-500);
+    font-weight: 600;
+}
+
+/* ── Voice Button ── */
+.voiceBtn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(var(--accent-500-rgb), 0.2);
+    background: rgba(var(--accent-500-rgb), 0.06);
+    color: var(--accent-500);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.voiceBtn:hover {
+    background: rgba(var(--accent-500-rgb), 0.12);
+    border-color: rgba(var(--accent-500-rgb), 0.35);
+}
+
+@media (min-width: 640px) {
+    .numKey {
+        height: 56px;
+        font-size: 20px;
+    }
+
+    .amountInput {
+        font-size: 3rem;
+        max-width: 280px;
+    }
+}
