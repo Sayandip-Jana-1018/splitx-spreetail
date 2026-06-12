@@ -1,0 +1,42 @@
+Date,Description,Amount,Currency,Paid By,Split Among,Category,Notes
+2025-02-01,February Rent,60000,,Aisha,"Aisha, Rohan, Priya, Meera",Rent,Monthly rent
+2025-02-03,Groceries - Big Basket,3200,,Rohan,"Aisha, Rohan, Priya, Meera",Groceries,Weekly groceries
+2025-02-05,Electricity Bill January,2400,INR,Priya,"Aisha, Rohan, Priya, Meera",Utilities,
+15/02/2025,WiFi Bill - Airtel,1499,INR,Meera,"Aisha, Rohan, Priya, Meera",Utilities,Monthly WiFi
+2025-02-18,Dinner at Mainland China,3200,INR,Aisha,"Aisha, Rohan, Priya, Meera",Food,Team dinner
+18-02-2025,Mainland China Dinner,3400,INR, Rohan,"Aisha, Rohan, Priya, Meera",Food,Team dinner everyone
+2025-02-22,Groceries - DMart,2800,,Priya,"Aisha, Rohan, Priya, Meera",Groceries,
+2025-02-28,Gas Cylinder Refill,1100,INR,Meera,"Aisha, Rohan, Priya, Meera",Utilities,
+2025-03-01,March Rent,60000,,Aisha,"Aisha, Rohan, Priya, Meera",Rent,Monthly rent
+03/05/2025,Groceries - Zepto,1850,,Rohan,"Aisha, Rohan, Priya, Meera",Groceries,Quick delivery
+2025-03-08,Returned Bottles Deposit,-500,,Priya,"Aisha, Rohan, Priya, Meera",Groceries,Got deposit back from store
+2025-03-10,Cab to Airport,1200,INR,Aisha,"Aisha, Rohan, Priya, Dev",Travel,Goa trip starts
+2025-03-10,Goa Hotel Booking (2 nights),18000,INR,Rohan,"Aisha, Rohan, Priya, Meera, Dev",Travel,Beach Resort
+2025-03-11,Scuba Diving,45,USD,Dev,"Aisha, Rohan, Priya, Dev",Activities,Per person rate was different but Dev paid full
+2025-03-11,Beach Shack Lunch,2800,INR,Priya,"Aisha, Rohan, Priya, Dev",Food,
+2025-03-12,Jet Ski + Parasailing,60,USD,Aisha,"Aisha, Rohan, Priya, Dev",Activities,
+2025-03-12,Souvenir Shopping,1500,INR,Rohan,"Rohan, Priya",Shopping,Only Rohan and Priya bought stuff
+2025-03-12,Cab Back from Airport,1400,INR,Dev,"Aisha, Rohan, Priya, Dev",Travel,
+2025-03-15,Electricity Bill February,2600,INR,Aisha,"Aisha, Rohan, Priya, Meera",Utilities,
+2025-03-18,Groceries - Big Basket,2900,,Meera,"Aisha, Rohan, Priya, Meera",Groceries,
+2025-03-22,Dinner at Pizza Hut,2200,INR,Rohan,"Aisha, Rohan, Priya, Meera",Food,
+2025-03-25,Rohan paid Priya,3000,INR,Rohan,Priya,Settlement,Settling previous dues
+2025-03-28,WiFi Bill March,1499,INR,Priya,"Aisha, Rohan, Priya, Meera",Utilities,
+2025-03-30,Farewell Dinner for Meera,4500,INR,Aisha,"Aisha, Rohan, Priya, Meera",Food,Meera's last dinner
+2025-04-01,April Rent,45000,, Aisha ,"Aisha, Rohan, Priya",Rent,Now 3 people after Meera left
+2025-04-05,Groceries,0,,Rohan,"Aisha, Rohan, Priya",Groceries,
+2025-04-08,Electricity Bill March,2800,INR,Priya,"Aisha, Rohan, Priya, Meera",Utilities,Meera still included even though she left
+2025-04-10,House Cleaning Service,1800,INR,Rohan,"Aisha, Rohan, Priya",Services,
+04/15/2025,Groceries - Blinkit,,INR,Aisha,"Aisha, Rohan, Priya, Sam",Groceries,Sam just moved in
+2025-04-15,Welcome Lunch for Sam,3200,INR,Priya,"Aisha, Rohan, priya, Sam",Food,Typo in priya's name
+2025-04-18,WiFi Bill April,1499,INR,Aisha,"Aisha, Rohan, Priya, Sam",Utilities,
+2025-04-20,Groceries Weekly,3100,,Sam,"Aisha, Rohan, Priya, Sam",Groceries,
+2025-04-22,Uber Eats Order,850,INR,Rohan,"Aisha, Rohan",Food,Only Aisha and Rohan
+2025-04-25,New Curtains for Hall,4200,INR,Aisha,"Aisha, Rohan, Priya, Sam",Home,
+2025-04-28,Water Purifier Service,600,INR,Sam,"Aisha, Rohan, Priya, Sam",Services,
+2025-05-01,May Rent,60000,,Rohan,"Aisha, Rohan, Priya, Sam",Rent,
+2025-05-03,Electricity Bill April,3100,INR,Priya,"Aisha, Rohan, Priya, Sam",Utilities,
+2025-05-05,Groceries - Big Basket,3400,,Aisha,"Aisha, Rohan, Priya, Sam",Groceries,
+2025-05-08,Dinner at Biryani House,2600,INR,Sam,"Aisha, Rohan, Priya, Sam",Food,
+2025-05-10,Movie Night Tickets,1200,INR,Rohan,"Aisha, Rohan, Priya, Sam",Entertainment,
+2025-03-05,Groceries - Zepto,1850,,Rohan,"Aisha, Rohan, Priya, Meera",Groceries,Quick delivery - same as row 10
