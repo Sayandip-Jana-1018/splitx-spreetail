@@ -2,8 +2,8 @@
 
 A production-grade, mobile-first shared expenses application built for the **Spreetail Software Engineering Assignment**.
 
-🔗 **Live App:** [Deployed URL — TBD after Vercel deploy]  
-📂 **GitHub:** [Repository URL — TBD after git push]
+🔗 **Live App:** https://splitx-spreetail.vercel.app  
+📂 **GitHub:** https://github.com/Sayandip-Jana-1018/splitx-spreetail
 
 ---
 
