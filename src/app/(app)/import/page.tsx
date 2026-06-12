@@ -59,7 +59,7 @@ interface ParseResult {
 /* ── Animations ── */
 const fadeUp = {
     hidden: { opacity: 0, y: 16 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] } },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
 };
 
 const stagger = {
@@ -238,7 +238,7 @@ export default function ImportPage() {
 
         result.anomalies.forEach((a, i) => {
             lines.push(`${i + 1}. [${a.severity.toUpperCase()}] ${a.type}`);
-            if (a.row) lines.push(`   Row: ${a.row}`);
+            if (a.rowNumbers?.length) lines.push(`   Row(s): ${a.rowNumbers.join(', ')}`);
             lines.push(`   ${a.description}`);
             lines.push(`   Action: ${a.proposedAction}`);
             lines.push(`   Decision: ${a.userDecision || 'approve'}`);

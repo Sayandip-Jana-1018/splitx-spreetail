@@ -121,6 +121,41 @@ export default function ScanReceiptPage() {
         }
         setShowCamera(false);
     }, []);
+    async function handleAdvancedScan(base64Image: string) {
+        setScanState('loading');
+        setProgress(0);
+        // Simulate progress for better UX
+        const progressInterval = setInterval(() => {
+            setProgress(p => Math.min(p + 3, 90));
+        }, 300);
+
+        try {
+            const res = await fetch('/api/receipt-scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Image }),
+            });
+
+            clearInterval(progressInterval);
+            setProgress(100);
+
+            if (!res.ok) {
+                const err = await res.json();
+                setErrorMsg(err.error || 'Advanced scan failed. Please try again.');
+                setScanState('error');
+                return;
+            }
+
+            const data: AdvancedResult = await res.json();
+            setAdvancedResult(data);
+            setScanState('result');
+        } catch (err) {
+            clearInterval(progressInterval);
+            console.error('Advanced scan error:', err);
+            setErrorMsg('Failed to connect to AI service. Check your connection and try again.');
+            setScanState('error');
+        }
+    };
 
     const handleFile = useCallback(async (file: File) => {
         if (!file.type.startsWith('image/')) {
@@ -201,41 +236,7 @@ export default function ScanReceiptPage() {
         }, 'image/jpeg', 0.92);
     }, [closeCamera, handleFile]);
 
-    const handleAdvancedScan = async (base64Image: string) => {
-        setScanState('loading');
-        setProgress(0);
-        // Simulate progress for better UX
-        const progressInterval = setInterval(() => {
-            setProgress(p => Math.min(p + 3, 90));
-        }, 300);
 
-        try {
-            const res = await fetch('/api/receipt-scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: base64Image }),
-            });
-
-            clearInterval(progressInterval);
-            setProgress(100);
-
-            if (!res.ok) {
-                const err = await res.json();
-                setErrorMsg(err.error || 'Advanced scan failed. Please try again.');
-                setScanState('error');
-                return;
-            }
-
-            const data: AdvancedResult = await res.json();
-            setAdvancedResult(data);
-            setScanState('result');
-        } catch (err) {
-            clearInterval(progressInterval);
-            console.error('Advanced scan error:', err);
-            setErrorMsg('Failed to connect to AI service. Check your connection and try again.');
-            setScanState('error');
-        }
-    };
 
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
