@@ -1,0 +1,1277 @@
+'use client';
+
+import { useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence, PanInfo } from 'framer-motion';
+import useSWR from 'swr';
+import { ArrowRightLeft, Check, Download, Share2, GitBranch, Inbox, CreditCard, Bell, ChevronLeft, ChevronRight, ChevronDown, Info, CheckCheck, ShieldAlert } from 'lucide-react';
+import Button from '@/components/ui/Button';
+import Avatar from '@/components/ui/Avatar';
+import Badge from '@/components/ui/Badge';
+import Modal from '@/components/ui/Modal';
+import ErrorState from '@/components/ui/ErrorState';
+import SettlementGraph from '@/components/features/SettlementGraph';
+import UpiPaymentModal from '@/components/features/UpiPaymentModal';
+import { useToast } from '@/components/ui/Toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { usePerformanceMode } from '@/hooks/usePerformanceMode';
+import { useViewportTier } from '@/hooks/useViewportTier';
+import { isFeatureEnabled } from '@/lib/featureFlags';
+import { getNetworkErrorCopy, NetworkTaggedError, toNetworkTaggedError } from '@/lib/networkErrors';
+import { formatCurrency } from '@/lib/utils';
+import { exportAsText, shareSettlement } from '@/lib/export';
+import { SettlementSkeleton } from '@/components/ui/Skeleton';
+import {
+    canInitiateSettlementPayment,
+    isAwaitingReceiverApproval,
+    isCompletedSettlementStatus,
+    isPendingSettlementStatus,
+} from '@/lib/settlementStatus';
+
+/* ── SWR fetcher ── */
+const fetcher = async (url: string) => {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw toNetworkTaggedError({ response: res });
+        return res.json();
+    } catch (error) {
+        if (error instanceof NetworkTaggedError) throw error;
+        throw toNetworkTaggedError({ error });
+    }
+};
+
+/* ── Glassmorphic styles ── */
+const glass: React.CSSProperties = {
+    background: 'var(--bg-glass)',
+    backdropFilter: 'blur(24px) saturate(1.5)',
+    WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
+    border: '1px solid var(--border-glass)',
+    borderRadius: 'var(--radius-xl)',
+    boxShadow: 'var(--shadow-card)',
+    position: 'relative',
+    overflow: 'hidden',
+};
+
+/* ── Types ── */
+interface UserRef { id: string; name: string | null; image?: string | null }
+interface ComputedTransfer {
+    from: string; to: string; amount: number;
+    fromName?: string; toName?: string;
+    fromImage?: string | null; toImage?: string | null;
+    toUpiId?: string | null;
+    tripId?: string;
+    groupId?: string;
+    groupName?: string;
+    groupEmoji?: string;
+    groupBreakdown?: { groupName: string; groupEmoji: string; amount: number }[];
+}
+interface RecordedSettlement {
+    id: string; fromId: string; toId: string; amount: number;
+    status: string; method: string | null; note: string | null;
+    from: UserRef; to: UserRef; createdAt: string;
+    tripId?: string;
+}
+interface GroupData {
+    groupId: string; groupName: string; groupEmoji: string; tripId: string;
+    members: { id: string; name: string; image: string | null }[];
+    computed: ComputedTransfer[];
+    recorded: RecordedSettlement[];
+}
+interface ByGroupResponse {
+    groups: GroupData[];
+    global: { computed: ComputedTransfer[]; recorded: RecordedSettlement[] };
+}
+
+interface SettlementListItem {
+    id: string;
+    source: 'computed' | 'recorded';
+    from: { name: string; id: string; image?: string | null };
+    to: { name: string; id: string; image?: string | null };
+    amount: number;
+    status: string;
+    toUpiId: string | null;
+    tripId: string;
+    settlementId?: string;
+    method?: string | null;
+    note?: string | null;
+    createdAt?: string;
+    groupBreakdown?: { groupName: string; groupEmoji: string; amount: number }[];
+}
+
+function buildSettlementKey(fromId: string, toId: string, amount: number, tripId: string) {
+    return `${tripId}:${fromId}:${toId}:${amount}`;
+}
+
+/* ── Main component ── */
+export default function SettlementsPage() {
+    const router = useRouter();
+    const { user: currentUser } = useCurrentUser();
+    const { mode } = usePerformanceMode();
+    const { isDesktop, isTablet } = useViewportTier();
+    const desktopStageStyle: React.CSSProperties = isDesktop
+        ? { width: 'min(100%, 1040px)', margin: '0 auto' }
+        : { width: '100%' };
+    const { toast } = useToast();
+    const [activeSlide, setActiveSlide] = useState(0); // 0 = "All", 1..N = per-group
+    const [tab, setTab] = useState<'pending' | 'settled'>('pending');
+    const [confirmSettle, setConfirmSettle] = useState<{ from: string; to: string; amount: number; tripId: string } | null>(null);
+    const [settling, setSettling] = useState(false);
+    const [upiModal, setUpiModal] = useState<{ open: boolean; amount: number; payeeName: string; payeeUpiId?: string; settlementId?: string }>({ open: false, amount: 0, payeeName: '' });
+    const [expandedGlobalIdx, setExpandedGlobalIdx] = useState<number | null>(null);
+
+    // SWR data fetching — single call replaces N+2 waterfall
+    const { data, isLoading, error, mutate } = useSWR<ByGroupResponse>('/api/settlements/by-group', fetcher, {
+        dedupingInterval: 20000,
+        revalidateOnFocus: false,
+        keepPreviousData: true,
+    });
+
+    const currentUserId = currentUser?.id || null;
+
+    // Derive all computed values from SWR data
+    const { slides, nameMap, imageMap, activePending, activeSettled } = useMemo(() => {
+        const groups = data?.groups || [];
+        const globalComputed = data?.global?.computed || [];
+        const globalRecorded = data?.global?.recorded || [];
+
+        // Build name/image maps
+        const nMap: Record<string, string> = {};
+        const iMap: Record<string, string | null> = {};
+        for (const g of groups) {
+            for (const m of g.members) {
+                nMap[m.id] = m.name;
+                iMap[m.id] = m.image;
+            }
+        }
+
+        // Groups first, Global last — so user sees simplified transfers with pay actions immediately
+        const slideData = [
+            ...groups.map(g => ({
+                label: g.groupName,
+                emoji: g.groupEmoji,
+                computed: g.computed,
+                recorded: g.recorded,
+                members: g.members,
+                tripId: g.tripId,
+                groupId: g.groupId,
+            })),
+            {
+                label: 'All Groups',
+                emoji: '🌐',
+                computed: globalComputed,
+                recorded: globalRecorded,
+                members: [] as { id: string; name: string; image: string | null }[],
+                tripId: '',
+                groupId: '',
+            },
+        ];
+        const globalSlideIdx = slideData.length - 1;
+
+        const buildPending = (
+            computed: ComputedTransfer[],
+            recorded: RecordedSettlement[],
+            tripId: string
+        ): SettlementListItem[] => {
+            const inFlight = recorded
+                .filter((settlement) => isPendingSettlementStatus(settlement.status))
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+            const inFlightKeys = new Set(
+                inFlight.map((settlement) =>
+                    buildSettlementKey(
+                        settlement.fromId,
+                        settlement.toId,
+                        settlement.amount,
+                        settlement.tripId || tripId
+                    )
+                )
+            );
+
+            const requestItems: SettlementListItem[] = inFlight.map((settlement) => ({
+                id: settlement.id,
+                source: 'recorded',
+                settlementId: settlement.id,
+                from: { name: settlement.from.name || 'Unknown', id: settlement.fromId, image: settlement.from.image || null },
+                to: { name: settlement.to.name || 'Unknown', id: settlement.toId, image: settlement.to.image || null },
+                amount: settlement.amount,
+                status: settlement.status,
+                toUpiId: null,
+                tripId: settlement.tripId || tripId,
+                method: settlement.method,
+                note: settlement.note,
+                createdAt: settlement.createdAt,
+            }));
+
+            const suggestedItems: SettlementListItem[] = computed
+                .filter((transfer) => !inFlightKeys.has(
+                    buildSettlementKey(transfer.from, transfer.to, transfer.amount, transfer.tripId || tripId)
+                ))
+                .map((transfer, index) => ({
+                    id: `computed-${tripId}-${index}`,
+                    source: 'computed',
+                    from: { name: nMap[transfer.from] || transfer.fromName || transfer.from, id: transfer.from, image: transfer.fromImage || iMap[transfer.from] || null },
+                    to: { name: nMap[transfer.to] || transfer.toName || transfer.to, id: transfer.to, image: transfer.toImage || iMap[transfer.to] || null },
+                    amount: transfer.amount,
+                    status: 'pending',
+                    toUpiId: transfer.toUpiId || null,
+                    tripId: transfer.tripId || tripId,
+                    groupBreakdown: transfer.groupBreakdown || [],
+                }));
+
+            return [...requestItems, ...suggestedItems];
+        };
+
+        const buildSettled = (recorded: RecordedSettlement[]): SettlementListItem[] =>
+            recorded
+                .filter((settlement) => isCompletedSettlementStatus(settlement.status))
+                .map((settlement) => ({
+                    id: settlement.id,
+                    source: 'recorded',
+                    settlementId: settlement.id,
+                    from: { name: settlement.from.name || 'Unknown', id: settlement.fromId, image: settlement.from.image || null },
+                    to: { name: settlement.to.name || 'Unknown', id: settlement.toId, image: settlement.to.image || null },
+                    amount: settlement.amount,
+                    status: settlement.status,
+                    toUpiId: null,
+                    tripId: settlement.tripId || '',
+                    method: settlement.method,
+                    note: settlement.note,
+                    createdAt: settlement.createdAt,
+                }));
+
+        const allP = buildPending(globalComputed, globalRecorded, '');
+        // Resolve tripId for global settlements — find any group where BOTH users are members
+        const allS = buildSettled(globalRecorded);
+
+        const active = slideData[activeSlide] || slideData[0];
+        const isGlobal = activeSlide === globalSlideIdx;
+        const aP = isGlobal ? allP : buildPending(active.computed, active.recorded, active.tripId);
+        const aS = isGlobal ? allS : buildSettled(active.recorded);
+
+        return {
+            slides: slideData,
+            nameMap: nMap,
+            imageMap: iMap,
+            allPending: allP,
+            allSettled: allS,
+            activePending: aP,
+            activeSettled: aS,
+        };
+    }, [data, activeSlide]);
+
+    const filteredSettlements = tab === 'pending' ? activePending : activeSettled;
+
+    const totalYouOwe = activePending.filter(s => s.from.id === currentUserId).reduce((sum, s) => sum + s.amount, 0);
+    const totalOwedToYou = activePending.filter(s => s.to.id === currentUserId).reduce((sum, s) => sum + s.amount, 0);
+
+    // Detect global slide (always last)
+    const isGlobalSlide = activeSlide === slides.length - 1;
+
+    // Carousel navigation
+    const slideCount = slides.length;
+    const goToSlide = useCallback((idx: number) => {
+        setActiveSlide(Math.max(0, Math.min(idx, slideCount - 1)));
+    }, [slideCount]);
+
+    const handleDragEnd = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+        const threshold = 50;
+        if (info.offset.x < -threshold && activeSlide < slideCount - 1) {
+            setActiveSlide(prev => prev + 1);
+        } else if (info.offset.x > threshold && activeSlide > 0) {
+            setActiveSlide(prev => prev - 1);
+        }
+    }, [activeSlide, slideCount]);
+
+    // Build graph data for the active group slide
+    const activeSlideData = slides[activeSlide];
+    const graphMembers = activeSlideData?.members?.map(m => m.name) || [];
+    const graphSettlements = (activeSlideData?.computed || []).map(s => ({
+        from: nameMap[s.from] || s.fromName || s.from,
+        to: nameMap[s.to] || s.toName || s.to,
+        amount: s.amount,
+    }));
+    const graphMemberImages: Record<string, string | null> = {};
+    for (const m of activeSlideData?.members || []) {
+        graphMemberImages[m.name] = m.image;
+    }
+
+    // Handle mark as paid — creates settlement AND immediately transitions to paid_pending
+    const handleMarkAsPaid = async () => {
+        if (!confirmSettle) return;
+        const tripId = confirmSettle.tripId || activeSlideData?.tripId;
+        if (!tripId) {
+            toast('No active trip found — please add an expense first', 'error');
+            return;
+        }
+        setSettling(true);
+        try {
+            const res = await fetch('/api/settlements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tripId, toUserId: confirmSettle.to,
+                    amount: confirmSettle.amount, method: 'cash',
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast(err.error || 'Failed to record settlement', 'error');
+                return;
+            }
+            const created = await res.json();
+            // Immediately confirm so receiver gets the approve button
+            const confirmRes = await fetch(`/api/settlements/${created.id}/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ utrNumber: '' }),
+            });
+            if (confirmRes.ok) {
+                toast('Settlement sent for receiver approval.', 'success');
+            } else {
+                toast('Settlement created. Ask the receiver to approve it.', 'success');
+            }
+            setConfirmSettle(null);
+            mutate();
+        } catch {
+            toast('Network error', 'error');
+        } finally {
+            setSettling(false);
+        }
+    };
+
+    if (isLoading) return <SettlementSkeleton />;
+    if (error instanceof NetworkTaggedError) {
+        const copy = getNetworkErrorCopy(error.variant);
+        return (
+            <ErrorState
+                variant={error.variant}
+                title={copy.title}
+                message={copy.message}
+                onRetry={() => mutate()}
+            />
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', ...desktopStageStyle }}>
+            {/* ═══ HEADER ═══ */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+                <div className="page-hero" style={{ paddingTop: 'var(--space-2)' }}>
+                    <div className="page-kicker">Settle Smarter</div>
+                    <h2 className="page-hero-title">Minimum transfers, maximum clarity</h2>
+                    <p className="page-hero-subtitle">
+                        Review who owes whom, understand why each transfer exists, and jump into Balance Journey when the route changes.
+                    </p>
+                </div>
+            </motion.div>
+
+            {/* ═══ BALANCE OVERVIEW — Glassmorphic Hero ═══ */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.05 }}
+                style={{ width: '100%', maxWidth: isDesktop ? 860 : undefined, margin: '0 auto' }}
+            >
+                <div style={{
+                    ...glass, borderRadius: 'var(--radius-2xl)', padding: 'var(--space-4)',
+                    background: 'linear-gradient(135deg, rgba(var(--accent-500-rgb), 0.08), var(--bg-glass), rgba(var(--accent-500-rgb), 0.04))',
+                    boxShadow: 'var(--shadow-card), 0 0 30px rgba(var(--accent-500-rgb), 0.06)',
+                }}>
+                    {/* Top light edge */}
+                    <div style={{
+                        position: 'absolute', top: 0, left: '15%', right: '15%', height: 1,
+                        background: 'linear-gradient(90deg, transparent, rgba(var(--accent-500-rgb), 0.15), transparent)',
+                        pointerEvents: 'none',
+                    }} />
+                    <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            background: 'rgba(239, 68, 68, 0.06)',
+                            borderRadius: 'var(--radius-xl)',
+                            border: '1px solid rgba(239, 68, 68, 0.1)',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-error)', fontWeight: 600, marginBottom: 4 }}>
+                                You Owe
+                            </div>
+                            <div className="font-display" style={{ fontSize: 'var(--text-lg)', fontWeight: 800, color: 'var(--fg-primary)' }}>
+                                {formatCurrency(totalYouOwe)}
+                            </div>
+                        </div>
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            background: 'rgba(16, 185, 129, 0.06)',
+                            borderRadius: 'var(--radius-xl)',
+                            border: '1px solid rgba(16, 185, 129, 0.1)',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success)', fontWeight: 600, marginBottom: 4 }}>
+                                Owed to You
+                            </div>
+                            <div className="font-display" style={{ fontSize: 'var(--text-lg)', fontWeight: 800, color: 'var(--fg-primary)' }}>
+                                {formatCurrency(totalOwedToYou)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* ═══ GROUP CAROUSEL ═══ */}
+            {slides.length > 1 && (
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.5 }}>
+                    {/* Carousel Navigation Header */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        marginBottom: 'var(--space-3)',
+                        width: '100%',
+                        maxWidth: isDesktop ? 860 : undefined,
+                        marginInline: 'auto',
+                    }}>
+                        <button
+                            onClick={() => goToSlide(activeSlide - 1)}
+                            disabled={activeSlide === 0}
+                            style={{
+                                background: 'none', border: 'none', padding: 6,
+                                color: activeSlide === 0 ? 'var(--fg-muted)' : 'var(--fg-secondary)',
+                                cursor: activeSlide === 0 ? 'default' : 'pointer',
+                                opacity: activeSlide === 0 ? 0.3 : 1,
+                                transition: 'all 0.2s',
+                            }}
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '18px' }}>{activeSlideData?.emoji}</span>
+                            <span className="font-display" style={{
+                                fontSize: 'var(--text-sm)', fontWeight: 700,
+                                color: 'var(--fg-primary)',
+                            }}>
+                                {activeSlideData?.label}
+                            </span>
+                            <span style={{
+                                fontSize: 'var(--text-xs)', color: 'var(--fg-muted)', fontWeight: 500,
+                            }}>
+                                {activeSlide + 1}/{slideCount}
+                            </span>
+                        </div>
+
+                        <button
+                            onClick={() => goToSlide(activeSlide + 1)}
+                            disabled={activeSlide === slideCount - 1}
+                            style={{
+                                background: 'none', border: 'none', padding: 6,
+                                color: activeSlide === slideCount - 1 ? 'var(--fg-muted)' : 'var(--fg-secondary)',
+                                cursor: activeSlide === slideCount - 1 ? 'default' : 'pointer',
+                                opacity: activeSlide === slideCount - 1 ? 0.3 : 1,
+                                transition: 'all 0.2s',
+                            }}
+                        >
+                            <ChevronRight size={18} />
+                        </button>
+                    </div>
+
+                    {/* Dot Indicators */}
+                    <div style={{
+                        display: 'flex', justifyContent: 'center', gap: 6,
+                        marginBottom: 'var(--space-3)',
+                    }}>
+                        {slides.map((slide, idx) => (
+                            <button
+                                key={slide.groupId || 'all'}
+                                onClick={() => goToSlide(idx)}
+                                style={{
+                                    width: idx === activeSlide ? 20 : 8,
+                                    height: 8,
+                                    borderRadius: 100,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    background: idx === activeSlide
+                                        ? 'linear-gradient(135deg, var(--accent-400), var(--accent-600))'
+                                        : 'var(--fg-muted)',
+                                    opacity: idx === activeSlide ? 1 : 0.3,
+                                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                }}
+                                aria-label={`Go to ${slide.label}`}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Swipeable Graph Card */}
+                    <div style={{
+                        overflow: 'hidden',
+                        borderRadius: 'var(--radius-2xl)',
+                        maxWidth: isDesktop ? 'min(100%, 860px)' : '100%',
+                        margin: '0 auto',
+                    }}>
+                        <AnimatePresence mode="wait" initial={false}>
+                            <motion.div
+                                key={activeSlide}
+                                initial={{ opacity: 0, x: 40 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -40 }}
+                                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                                drag="x"
+                                dragConstraints={{ left: 0, right: 0 }}
+                                dragElastic={0.15}
+                                onDragEnd={handleDragEnd}
+                                style={{ cursor: 'grab', touchAction: 'pan-y' }}
+                            >
+                                {isGlobalSlide ? (
+                                    /* Global Summary Card — with per-group breakdown */
+                                    <div style={{
+                                        ...glass, borderRadius: 'var(--radius-2xl)', padding: 'var(--space-4)',
+                                        background: 'linear-gradient(135deg, rgba(var(--accent-500-rgb), 0.06), var(--bg-glass))',
+                                    }}>
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            marginBottom: 'var(--space-2)',
+                                        }}>
+                                            <div style={{
+                                                display: 'flex', alignItems: 'center', gap: 8,
+                                                fontSize: 'var(--text-xs)', color: 'var(--fg-tertiary)', fontWeight: 600,
+                                                textTransform: 'uppercase', letterSpacing: '0.05em',
+                                            }}>
+                                                <GitBranch size={12} />
+                                                Global Group Summary
+                                            </div>
+                                        </div>
+                                        {/* Explanation */}
+                                        <div style={{
+                                            display: 'flex', alignItems: 'flex-start', gap: 6,
+                                            padding: '8px 10px', borderRadius: 'var(--radius-lg)',
+                                            background: 'rgba(var(--accent-500-rgb), 0.04)',
+                                            border: '1px solid rgba(var(--accent-500-rgb), 0.08)',
+                                            marginBottom: 'var(--space-3)',
+                                            fontSize: 11, color: 'var(--fg-tertiary)', lineHeight: 1.5,
+                                        }}>
+                                            <Info size={13} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent-400)' }} />
+                                            <span>Each row stays scoped to the group that created it, so shared members across different groups never get merged together.</span>
+                                        </div>
+                                        {activePending.length > 0 ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                {activePending.map((s, i) => {
+                                                    const isSender = s.from.id === currentUserId;
+                                                    const isReceiver = s.to.id === currentUserId;
+                                                    const breakdown = s.groupBreakdown || [];
+                                                    const isExpanded = expandedGlobalIdx === i;
+                                                    return (
+                                                        <div key={i}>
+                                                            <div
+                                                                onClick={() => setExpandedGlobalIdx(isExpanded ? null : i)}
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                                                    padding: '10px 12px', borderRadius: isExpanded ? '12px 12px 0 0' : 'var(--radius-lg)',
+                                                                    background: isSender
+                                                                        ? 'rgba(239, 68, 68, 0.04)'
+                                                                        : isReceiver
+                                                                            ? 'rgba(16, 185, 129, 0.04)'
+                                                                            : 'rgba(var(--accent-500-rgb), 0.03)',
+                                                                    border: `1px solid ${isSender ? 'rgba(239, 68, 68, 0.08)' : isReceiver ? 'rgba(16, 185, 129, 0.08)' : 'var(--border-glass)'}`,
+                                                                    borderBottom: isExpanded ? 'none' : undefined,
+                                                                    cursor: breakdown.length > 0 ? 'pointer' : 'default',
+                                                                    transition: 'all 0.2s',
+                                                                }}
+                                                            >
+                                                                <Avatar name={s.from.name} image={s.from.image} size="xs" />
+                                                                <ArrowRightLeft size={11} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+                                                                <Avatar name={s.to.name} image={s.to.image} size="xs" />
+                                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                                    <span style={{
+                                                                        fontSize: 'var(--text-xs)', fontWeight: 600,
+                                                                        color: isSender ? 'var(--color-error)' : isReceiver ? 'var(--color-success)' : 'var(--fg-primary)',
+                                                                    }}>
+                                                                        {isSender ? 'You' : s.from.name}
+                                                                    </span>
+                                                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-muted)', margin: '0 4px' }}>→</span>
+                                                                    <span style={{
+                                                                        fontSize: 'var(--text-xs)', fontWeight: 600,
+                                                                        color: isReceiver ? 'var(--color-success)' : 'var(--fg-primary)',
+                                                                    }}>
+                                                                        {isReceiver ? 'You' : s.to.name}
+                                                                    </span>
+                                                                </div>
+                                                                <span style={{
+                                                                    fontSize: 'var(--text-sm)', fontWeight: 800,
+                                                                    color: isSender ? 'var(--color-error)' : isReceiver ? 'var(--color-success)' : 'var(--fg-primary)',
+                                                                }}>
+                                                                    {formatCurrency(s.amount)}
+                                                                </span>
+                                                                {breakdown.length > 0 && (
+                                                                    <ChevronDown
+                                                                        size={14}
+                                                                        style={{
+                                                                            color: 'var(--fg-muted)', flexShrink: 0,
+                                                                            transform: isExpanded ? 'rotate(180deg)' : 'none',
+                                                                            transition: 'transform 0.2s',
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                            {/* Per-group breakdown */}
+                                                            <AnimatePresence>
+                                                                {isExpanded && breakdown.length > 0 && (
+                                                                    <motion.div
+                                                                        initial={{ height: 0, opacity: 0 }}
+                                                                        animate={{ height: 'auto', opacity: 1 }}
+                                                                        exit={{ height: 0, opacity: 0 }}
+                                                                        transition={{ duration: 0.2 }}
+                                                                        style={{ overflow: 'hidden' }}
+                                                                    >
+                                                                        <div style={{
+                                                                            padding: '8px 12px 10px',
+                                                                            borderRadius: '0 0 12px 12px',
+                                                                            background: 'rgba(var(--accent-500-rgb), 0.02)',
+                                                                            border: `1px solid ${isSender ? 'rgba(239, 68, 68, 0.08)' : isReceiver ? 'rgba(16, 185, 129, 0.08)' : 'var(--border-glass)'}`,
+                                                                            borderTop: 'none',
+                                                                            display: 'flex', flexDirection: 'column', gap: 4,
+                                                                        }}>
+                                                                            <span style={{
+                                                                                fontSize: 10, fontWeight: 700, color: 'var(--fg-muted)',
+                                                                                textTransform: 'uppercase', letterSpacing: '0.06em',
+                                                                                marginBottom: 2,
+                                                                            }}>
+                                                                                Breakdown by group
+                                                                            </span>
+                                                                            {breakdown.filter(b => b.amount > 0).map((b, bIdx) => (
+                                                                                <div key={bIdx} style={{
+                                                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                                                    padding: '4px 8px', borderRadius: 8,
+                                                                                    background: 'var(--bg-secondary)',
+                                                                                }}>
+                                                                                    <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, color: 'var(--fg-secondary)' }}>
+                                                                                        <span>{b.groupEmoji}</span>
+                                                                                        <span style={{ fontWeight: 600 }}>{b.groupName}</span>
+                                                                                    </span>
+                                                                                    <span style={{
+                                                                                        fontSize: 12, fontWeight: 700,
+                                                                                        color: isSender ? 'var(--color-error)' : isReceiver ? 'var(--color-success)' : 'var(--fg-primary)',
+                                                                                    }}>
+                                                                                        {formatCurrency(b.amount)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </motion.div>
+                                                                )}
+                                                            </AnimatePresence>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div style={{ textAlign: 'center', padding: 'var(--space-6) 0', color: 'var(--fg-tertiary)', fontSize: 'var(--text-sm)' }}>
+                                                All settled up! 🎉
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* Per-Group Graph Card */
+                                    <div style={{
+                                        ...glass, borderRadius: 'var(--radius-2xl)', padding: 'var(--space-3)',
+                                        background: 'linear-gradient(135deg, rgba(var(--accent-500-rgb), 0.04), var(--bg-glass))',
+                                    }}>
+                                        {graphSettlements.length > 0 ? (
+                                            <>
+                                                <div style={{
+                                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                                    marginBottom: 'var(--space-2)',
+                                                    padding: '0 var(--space-1)', gap: 4,
+                                                }}>
+                                                    <span style={{
+                                                        fontSize: 'var(--text-xs)', color: 'var(--fg-tertiary)',
+                                                        fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
+                                                        display: 'flex', alignItems: 'center', gap: 6,
+                                                    }}>
+                                                        <GitBranch size={12} />
+                                                        Simplified Transfers
+                                                    </span>
+                                                    <span style={{
+                                                        fontSize: '10px', color: 'var(--fg-muted)',
+                                                        background: 'rgba(var(--accent-500-rgb), 0.08)',
+                                                        padding: '2px 8px', borderRadius: 100, fontWeight: 600,
+                                                    }}>
+                                                        {graphSettlements.length} transfer{graphSettlements.length !== 1 ? 's' : ''}
+                                                    </span>
+                                                </div>
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'flex-start', gap: 6,
+                                                    padding: '6px 10px', borderRadius: 'var(--radius-lg)',
+                                                    background: 'rgba(var(--accent-500-rgb), 0.04)',
+                                                    border: '1px solid rgba(var(--accent-500-rgb), 0.08)',
+                                                    marginBottom: 'var(--space-2)',
+                                                    fontSize: 11, color: 'var(--fg-tertiary)', lineHeight: 1.5,
+                                                }}>
+                                                    <Info size={13} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent-400)' }} />
+                                                    <span>Debts are simplified to minimize total transfers. The amounts shown settle all balances in fewest payments.</span>
+                                                </div>
+                                                <SettlementGraph
+                                                    members={graphMembers}
+                                                    settlements={graphSettlements}
+                                                    memberImages={graphMemberImages}
+                                                    compact={!isDesktop}
+                                                    performanceMode={mode}
+                                                    instanceId={activeSlideData?.groupId || 'group'}
+                                                />
+                                            </>
+                                        ) : (
+                                            <div style={{ textAlign: 'center', padding: 'var(--space-8) 0' }}>
+                                                <div style={{
+                                                    width: 48, height: 48, borderRadius: 'var(--radius-2xl)',
+                                                    background: 'rgba(16, 185, 129, 0.08)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    margin: '0 auto var(--space-3)', color: '#10b981',
+                                                }}>
+                                                    <Check size={20} />
+                                                </div>
+                                                <div style={{ fontWeight: 600, color: 'var(--fg-primary)', marginBottom: 4, fontSize: 'var(--text-sm)' }}>
+                                                    All settled up! 🎉
+                                                </div>
+                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-tertiary)' }}>
+                                                    No pending transfers in this group.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ═══ TABS — Glassmorphic Segmented Control ═══ */}
+            <div style={{
+                display: 'flex', ...glass, borderRadius: 'var(--radius-xl)', padding: 3,
+                maxWidth: isDesktop ? 'min(100%, 860px)' : '100%',
+                margin: '0 auto',
+            }}>
+                {(['pending', 'settled'] as const).map((t) => (
+                    <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        style={{
+                            flex: 1, padding: '9px 16px', borderRadius: 'var(--radius-lg)',
+                            border: 'none', cursor: 'pointer',
+                            fontSize: 'var(--text-sm)', fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            background: tab === t
+                                ? 'linear-gradient(135deg, rgba(var(--accent-500-rgb), 0.15), rgba(var(--accent-500-rgb), 0.08))'
+                                : 'transparent',
+                            color: tab === t ? 'var(--accent-400)' : 'var(--fg-tertiary)',
+                            boxShadow: tab === t ? '0 0 12px rgba(var(--accent-500-rgb), 0.1)' : 'none',
+                            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}
+                    >
+                        {t === 'pending' ? `Pending (${activePending.length})` : `Settled (${activeSettled.length})`}
+                    </button>
+                ))}
+            </div>
+
+            {/* ═══ SETTLEMENT LIST — Glassmorphic Cards ═══ */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: isDesktop ? 'repeat(2, minmax(0, 1fr))' : isTablet ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+                gap: 'var(--space-3)',
+                maxWidth: isDesktop ? 'min(100%, 860px)' : '100%',
+                margin: '0 auto',
+            }}>
+                {filteredSettlements.length === 0 ? (
+                    <div style={{
+                        ...glass, borderRadius: 'var(--radius-2xl)',
+                        padding: 'var(--space-10) var(--space-4)', textAlign: 'center',
+                        gridColumn: isDesktop || isTablet ? '1 / -1' : undefined,
+                    }}>
+                        <div style={{ position: 'relative', zIndex: 1 }}>
+                            <div style={{
+                                width: 52, height: 52, borderRadius: 'var(--radius-2xl)',
+                                background: 'rgba(var(--accent-500-rgb), 0.08)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                margin: '0 auto var(--space-3)', color: 'var(--accent-400)',
+                            }}>
+                                <Inbox size={24} />
+                            </div>
+                            <div style={{ fontWeight: 600, color: 'var(--fg-primary)', marginBottom: 4 }}>
+                                {tab === 'pending' ? 'All settled up! 🎉' : 'No settled payments yet'}
+                            </div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-tertiary)' }}>
+                                {tab === 'pending' ? 'No pending settlements.' : 'Mark payments as settled to track them here.'}
+                            </div>
+                        </div>
+                    </div>
+                ) : filteredSettlements.map((settlement, i) => {
+                    const isSender = settlement.from.id === currentUserId;
+                    const isReceiver = settlement.to.id === currentUserId;
+                    const isSettled = isCompletedSettlementStatus(settlement.status);
+                    const isRecordedRequest = settlement.source === 'recorded';
+                    const isAwaitingApproval = isAwaitingReceiverApproval(settlement.status);
+                    const isPendingRequest = isRecordedRequest && isPendingSettlementStatus(settlement.status);
+                    const canSenderInitiate = isSender && (
+                        settlement.source === 'computed' ||
+                        (isRecordedRequest && canInitiateSettlementPayment(settlement.status))
+                    );
+                    const canReceiverApprove = isReceiver && isAwaitingApproval;
+                    const tripId = settlement.tripId || activeSlideData?.tripId || '';
+
+                    return (
+                        <motion.div
+                            key={settlement.id}
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.06, duration: 0.4 }}
+                        >
+                            <div style={{
+                                ...glass,
+                                borderRadius: 'var(--radius-xl)',
+                                padding: 'var(--space-4)',
+                                opacity: isSettled ? 0.65 : 1,
+                                borderColor: isSender ? 'rgba(239, 68, 68, 0.12)' : isReceiver ? 'rgba(16, 185, 129, 0.12)' : 'var(--border-glass)',
+                                transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                            }}
+                                onMouseEnter={(e) => {
+                                    if (!isSettled) {
+                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                        e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)';
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '';
+                                }}
+                            >
+                                {/* Transfer direction — centered vertical layout */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 'var(--space-3)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                        <Avatar name={settlement.from.name} image={settlement.from.image} size="sm" />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-sm)' }}>
+                                            <span style={{
+                                                fontWeight: 700,
+                                                color: isSender ? 'var(--color-error)' : 'var(--fg-primary)',
+                                            }}>
+                                                {isSender ? 'You' : settlement.from.name}
+                                            </span>
+                                            <ArrowRightLeft size={13} style={{ color: 'var(--fg-muted)' }} />
+                                            <span style={{
+                                                fontWeight: 700,
+                                                color: isReceiver ? 'var(--color-success)' : 'var(--fg-primary)',
+                                            }}>
+                                                {isReceiver ? 'You' : settlement.to.name}
+                                            </span>
+                                        </div>
+                                        <Avatar name={settlement.to.name} image={settlement.to.image} size="sm" />
+                                    </div>
+                                    <span style={{
+                                        fontSize: 'var(--text-xl)', fontWeight: 800,
+                                        color: isSender
+                                            ? 'var(--color-error)'
+                                            : isReceiver
+                                                ? 'var(--color-success)'
+                                                : 'var(--fg-primary)',
+                                    }}>
+                                        {formatCurrency(settlement.amount)}
+                                    </span>
+                                    {isPendingRequest && (
+                                        <Badge
+                                            variant={isAwaitingApproval ? 'accent' : 'warning'}
+                                            size="sm"
+                                        >
+                                            {isAwaitingApproval ? (
+                                                <>
+                                                    <CheckCheck size={11} /> {isReceiver ? 'Approve this payment' : 'Waiting for receiver approval'}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ShieldAlert size={11} /> {isSender ? 'Confirm you paid' : 'Pending payment'}
+                                                </>
+                                            )}
+                                        </Badge>
+                                    )}
+                                </div>
+
+                                {/* Actions */}
+                                {!isSettled && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%', paddingTop: 'var(--space-4)' }}>
+                                        {isGlobalSlide ? (
+                                            /* Global Pairwise view — informational only, no payment actions */
+                                            <>
+                                                {!isSender && !isReceiver ? (
+                                                    <Badge variant="accent">Between others</Badge>
+                                                ) : (
+                                                    <span style={{
+                                                        fontSize: 'var(--text-xs)', color: 'var(--fg-muted)',
+                                                        textAlign: 'center', lineHeight: 1.4,
+                                                        padding: '4px 12px',
+                                                        background: 'rgba(var(--accent-500-rgb), 0.06)',
+                                                        borderRadius: 'var(--radius-lg)',
+                                                    }}>
+                                                        Swipe to a group to pay or settle
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            /* Per-group view — show all payment actions */
+                                            <>
+                                                {canSenderInitiate && (
+                                                    <Button size="sm" leftIcon={<CreditCard size={13} />}
+                                                        style={{
+                                                            background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
+                                                            boxShadow: '0 4px 16px rgba(var(--accent-500-rgb), 0.25)',
+                                                        }}
+                                                        onClick={async () => {
+                                                            const resolvedTripId = settlement.tripId || tripId;
+                                                            if (!resolvedTripId) { toast('No active trip — add an expense first', 'error'); return; }
+                                                            try {
+                                                                let settlementId = settlement.settlementId;
+                                                                if (!settlementId) {
+                                                                    const res = await fetch('/api/settlements', {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({
+                                                                            tripId: resolvedTripId,
+                                                                            toUserId: settlement.to.id,
+                                                                            amount: settlement.amount,
+                                                                            method: 'upi',
+                                                                        }),
+                                                                    });
+                                                                    if (!res.ok) {
+                                                                        const err = await res.json().catch(() => ({}));
+                                                                        toast(err.error || 'Failed to create settlement', 'error');
+                                                                        return;
+                                                                    }
+                                                                    const created = await res.json();
+                                                                    settlementId = created.id;
+                                                                }
+                                                                setUpiModal({
+                                                                    open: true,
+                                                                    amount: settlement.amount,
+                                                                    payeeName: settlement.to.name,
+                                                                    payeeUpiId: settlement.toUpiId || undefined,
+                                                                    settlementId,
+                                                                });
+                                                            } catch {
+                                                                toast('Network error', 'error');
+                                                            }
+                                                        }}
+                                                    >
+                                                        {settlement.source === 'computed' ? 'Pay via UPI' : 'Continue payment'}
+                                                    </Button>
+                                                )}
+                                                {canReceiverApprove && (
+                                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                        <Button
+                                                            size="sm"
+                                                            leftIcon={<CheckCheck size={13} />}
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, var(--color-success), #059669)',
+                                                                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.22)',
+                                                            }}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const res = await fetch(`/api/settlements/${settlement.settlementId}/approve`, {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({ action: 'approve' }),
+                                                                    });
+                                                                    const data = await res.json().catch(() => ({}));
+                                                                    if (!res.ok) {
+                                                                        toast(data.error || 'Failed to approve payment', 'error');
+                                                                        return;
+                                                                    }
+                                                                    toast(data.message || 'Payment approved', 'success');
+                                                                    mutate();
+                                                                } catch {
+                                                                    toast('Network error', 'error');
+                                                                }
+                                                            }}
+                                                        >
+                                                            Approve receipt
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            leftIcon={<ShieldAlert size={13} />}
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const res = await fetch(`/api/settlements/${settlement.settlementId}/approve`, {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({ action: 'reject' }),
+                                                                    });
+                                                                    const data = await res.json().catch(() => ({}));
+                                                                    if (!res.ok) {
+                                                                        toast(data.error || 'Failed to send back the request', 'error');
+                                                                        return;
+                                                                    }
+                                                                    toast(data.message || 'Sent back to payer', 'success');
+                                                                    mutate();
+                                                                } catch {
+                                                                    toast('Network error', 'error');
+                                                                }
+                                                            }}
+                                                        >
+                                                            Not received yet
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                                {/* Receiver actions for pending settlements (cash or reject) */}
+                                                {isReceiver && !canReceiverApprove && !isSettled && !isGlobalSlide && (
+                                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                        <Button
+                                                            size="sm"
+                                                            leftIcon={<CheckCheck size={13} />}
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, var(--color-success), #059669)',
+                                                                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.22)',
+                                                            }}
+                                                            onClick={async () => {
+                                                                const resolvedTripId = settlement.tripId || tripId;
+                                                                if (!resolvedTripId) { toast('No active trip', 'error'); return; }
+                                                                try {
+                                                                    let sid = settlement.settlementId;
+                                                                    if (!sid) {
+                                                                        const createRes = await fetch('/api/settlements', {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                            body: JSON.stringify({
+                                                                                tripId: resolvedTripId,
+                                                                                fromUserId: settlement.from.id,
+                                                                                toUserId: settlement.to.id,
+                                                                                amount: settlement.amount,
+                                                                                method: 'cash',
+                                                                            }),
+                                                                        });
+                                                                        if (!createRes.ok) {
+                                                                            const err = await createRes.json().catch(() => ({}));
+                                                                            toast(err.error || 'Failed to create settlement', 'error');
+                                                                            return;
+                                                                        }
+                                                                        const created = await createRes.json();
+                                                                        sid = created.id;
+                                                                    }
+                                                                    const res = await fetch(`/api/settlements/${sid}/confirm-by-receiver`, {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({ action: 'accept_cash' }),
+                                                                    });
+                                                                    const data = await res.json().catch(() => ({}));
+                                                                    if (!res.ok) {
+                                                                        toast(data.error || 'Failed to accept', 'error');
+                                                                        return;
+                                                                    }
+                                                                    toast('Cash payment confirmed ✓', 'success');
+                                                                    mutate();
+                                                                } catch {
+                                                                    toast('Network error', 'error');
+                                                                }
+                                                            }}
+                                                        >
+                                                            Accept (Cash)
+                                                        </Button>
+                                                        {settlement.settlementId && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                leftIcon={<ShieldAlert size={13} />}
+                                                                style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--color-error)' }}
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const res = await fetch(`/api/settlements/${settlement.settlementId}/confirm-by-receiver`, {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                            body: JSON.stringify({ action: 'reject' }),
+                                                                        });
+                                                                        const data = await res.json().catch(() => ({}));
+                                                                        if (!res.ok) {
+                                                                            toast(data.error || 'Failed to reject', 'error');
+                                                                            return;
+                                                                        }
+                                                                        toast('Settlement rejected — sender notified', 'success');
+                                                                        mutate();
+                                                                    } catch {
+                                                                        toast('Network error', 'error');
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Not Paid
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {isReceiver && !canReceiverApprove && settlement.source === 'computed' && (
+                                                    <Button size="sm" variant="outline"
+                                                        leftIcon={<Bell size={13} />}
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await fetch('/api/notifications', {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({
+                                                                        userId: settlement.from.id,
+                                                                        type: 'payment_reminder',
+                                                                        title: 'Payment Reminder',
+                                                                        body: `${settlement.to.name} is reminding you to pay ${formatCurrency(settlement.amount)}`,
+                                                                        link: '/settlements',
+                                                                    }),
+                                                                });
+                                                                if (res.ok) {
+                                                                    toast('Reminder sent!', 'success');
+                                                                } else {
+                                                                    toast('Failed to send reminder', 'error');
+                                                                }
+                                                            } catch {
+                                                                toast('Network error', 'error');
+                                                            }
+                                                        }}
+                                                    >
+                                                        Remind
+                                                    </Button>
+                                                )}
+                                                {isSender && isAwaitingApproval && (
+                                                    <span style={{
+                                                        fontSize: 'var(--text-xs)',
+                                                        color: 'var(--fg-muted)',
+                                                        textAlign: 'center',
+                                                        lineHeight: 1.4,
+                                                        padding: '4px 12px',
+                                                        background: 'rgba(var(--accent-500-rgb), 0.06)',
+                                                        borderRadius: 'var(--radius-lg)',
+                                                    }}>
+                                                        Waiting for {settlement.to.name} to approve receipt
+                                                    </span>
+                                                )}
+                                                {!isSender && !isReceiver && (
+                                                    <Badge variant="accent">Between others</Badge>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
+                                {isSettled && (
+                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                        <Badge variant="success" size="sm">
+                                            <Check size={11} /> Approved & settled
+                                        </Badge>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    );
+                })}
+            </div>
+
+            {/* ═══ EXPORT ACTIONS ═══ */}
+            {activePending.length > 0 && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', maxWidth: isDesktop ? 860 : undefined, margin: '0 auto' }}>
+                        <button
+                            onClick={() => {
+                                const data = {
+                                    groupName: activeSlideData?.label || 'Group', tripName: 'Trip',
+                                    members: graphMembers.map(m => ({ name: m })),
+                                    transactions: [], settlements: graphSettlements,
+                                    totalSpent: activePending.reduce((sum, s) => sum + s.amount, 0),
+                                    exportDate: new Date(),
+                                };
+                                exportAsText(data);
+                            }}
+                            style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                padding: '10px', borderRadius: 'var(--radius-xl)',
+                                ...glass, cursor: 'pointer',
+                                color: 'var(--fg-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600,
+                                transition: 'all 0.2s',
+                            }}
+                        >
+                            <Download size={14} /> Export
+                        </button>
+                        <button
+                            onClick={() => {
+                                const data = {
+                                    groupName: activeSlideData?.label || 'Group', tripName: 'Trip',
+                                    members: graphMembers.map(m => ({ name: m })),
+                                    transactions: [], settlements: graphSettlements,
+                                    totalSpent: activePending.reduce((sum, s) => sum + s.amount, 0),
+                                    exportDate: new Date(),
+                                };
+                                shareSettlement(data);
+                            }}
+                            style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                padding: '10px', borderRadius: 'var(--radius-xl)',
+                                ...glass, cursor: 'pointer',
+                                color: 'var(--fg-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600,
+                                transition: 'all 0.2s',
+                            }}
+                        >
+                            <Share2 size={14} /> Share
+                        </button>
+                        {!isGlobalSlide && isFeatureEnabled('balanceJourney') && activeSlideData?.groupId && (
+                            <button
+                                onClick={() => router.push(`/groups/${activeSlideData.groupId}/journey`)}
+                                style={{
+                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                    padding: '10px', borderRadius: 'var(--radius-xl)',
+                                    ...glass, cursor: 'pointer',
+                                    color: 'var(--accent-500)', fontSize: 'var(--text-xs)', fontWeight: 700,
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                <GitBranch size={14} /> Why this exists
+                            </button>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ═══ CONFIRM SETTLEMENT MODAL ═══ */}
+            <Modal
+                isOpen={!!confirmSettle}
+                onClose={() => setConfirmSettle(null)}
+                title="Request Manual Settlement"
+                size="small"
+            >
+                {confirmSettle && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-3)' }}>
+                            <Avatar name={nameMap[confirmSettle.from] || 'User'} image={imageMap[confirmSettle.from]} size="md" />
+                            <ArrowRightLeft size={20} style={{ color: 'var(--fg-muted)' }} />
+                            <Avatar name={nameMap[confirmSettle.to] || 'User'} image={imageMap[confirmSettle.to]} size="md" />
+                        </div>
+                        <p style={{ color: 'var(--fg-secondary)', fontSize: 'var(--text-sm)' }}>
+                            Send a manual settlement request for <strong>{formatCurrency(confirmSettle.amount)}</strong> from{' '}
+                            <strong>{nameMap[confirmSettle.from] || 'User'}</strong> to{' '}
+                            <strong>{nameMap[confirmSettle.to] || 'User'}</strong>. The receiver will still need to approve that the payment was received.
+                        </p>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                            <Button variant="outline" fullWidth onClick={() => setConfirmSettle(null)}>Cancel</Button>
+                            <Button fullWidth loading={settling} onClick={handleMarkAsPaid}
+                                style={{
+                                    background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
+                                    boxShadow: '0 4px 20px rgba(var(--accent-500-rgb), 0.3)',
+                                }}
+                            >
+                                Send Request
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* UPI Payment Modal */}
+            <UpiPaymentModal
+                isOpen={upiModal.open}
+                onClose={() => setUpiModal({ open: false, amount: 0, payeeName: '' })}
+                settlementId={upiModal.settlementId}
+                amount={upiModal.amount}
+                payeeName={upiModal.payeeName}
+                payeeUpiId={upiModal.payeeUpiId}
+                onPaymentComplete={() => {
+                    setUpiModal({ open: false, amount: 0, payeeName: '' });
+                    mutate();
+                }}
+            />
+        </div>
+    );
+}
