@@ -87,8 +87,8 @@ erDiagram
     User ||--o{ GroupMember : belongs_to
     User ||--o{ Transaction : pays
     User ||--o{ SplitItem : owes
-    User ||--o{ Settlement : from
-    User ||--o{ Settlement : to
+    User ||--o{ Settlement : "from"
+    User ||--o{ Settlement : "to"
 
     Group ||--o{ GroupMember : has
     Group ||--o{ Trip : contains
