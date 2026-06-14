@@ -102,19 +102,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [deferredReady, setDeferredReady] = useState(false);
     const [chatReady, setChatReady] = useState(false);
     const [tourReady, setTourReady] = useState(false);
-    const [isDesktop, setIsDesktop] = useState(() => {
-        if (typeof window !== 'undefined') {
-            return window.matchMedia('(min-width: 1024px)').matches;
-        }
-        return false;
-    });
-    const haptics = useHaptics();
-    const { user } = useCurrentUser();
-    const { mode } = usePerformanceMode();
+    // Always start false so server and client agree on initial render (prevents hydration mismatch)
+    const [isDesktop, setIsDesktop] = useState(false);
 
     // Detect desktop breakpoint to conditionally render desktop sidebar
     useEffect(() => {
         const mq = window.matchMedia('(min-width: 1024px)');
+        // Set immediately after mount so there’s no layout flash
+        setIsDesktop(mq.matches);
         const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
         mq.addEventListener('change', handler);
         return () => mq.removeEventListener('change', handler);
