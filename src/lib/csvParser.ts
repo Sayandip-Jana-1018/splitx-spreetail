@@ -22,6 +22,8 @@ export interface RawCSVRow {
   currency: string;
   paidBy: string;
   splitAmong: string;
+  splitType: string;   // new: equal | unequal | percentage | share
+  splitDetails: string; // new: e.g. "Rohan 700; Priya 400" or "Aisha 30%"
   category: string;
   notes: string;
 }
@@ -112,12 +114,13 @@ export interface MemberTimeline {
 
 /** Known members from the assignment context */
 const KNOWN_MEMBERS_CONTEXT: Record<string, { joinedAt: string | null; leftAt: string | null }> = {
-  'Aisha': { joinedAt: '2025-02-01', leftAt: null },
-  'Rohan': { joinedAt: '2025-02-01', leftAt: null },
-  'Priya': { joinedAt: '2025-02-01', leftAt: null },
-  'Meera': { joinedAt: '2025-02-01', leftAt: '2025-03-31' },
-  'Dev': { joinedAt: '2025-03-10', leftAt: '2025-03-12' }, // trip only
-  'Sam': { joinedAt: '2025-04-15', leftAt: null },
+  'Aisha': { joinedAt: null, leftAt: null },
+  'Rohan': { joinedAt: null, leftAt: null },
+  'Priya': { joinedAt: null, leftAt: null },
+  // Meera left end of March — support both 2025 and 2026 by detecting dynamically
+  'Meera': { joinedAt: null, leftAt: null }, // leftAt detected from CSV data
+  'Dev': { joinedAt: null, leftAt: null },   // trip-only, detected from CSV
+  'Sam': { joinedAt: null, leftAt: null },   // join date detected from CSV
 };
 
 /** Exchange rates (configurable — documented in DECISIONS.md) */
@@ -153,7 +156,10 @@ export function parseCSVText(text: string): RawCSVRow[] {
     amount: findColumn(headers, ['amount', 'total', 'cost', 'price']),
     currency: findColumn(headers, ['currency', 'cur', 'curr']),
     paidBy: findColumn(headers, ['paid by', 'payer', 'paid_by', 'who paid']),
-    splitAmong: findColumn(headers, ['split among', 'split_among', 'shared with', 'split between', 'members']),
+    // Accept both old format ("split among") and new format ("split_with")
+    splitAmong: findColumn(headers, ['split among', 'split_among', 'split_with', 'shared with', 'split between', 'split with', 'members']),
+    splitType: findColumn(headers, ['split_type', 'split type', 'splittype']),
+    splitDetails: findColumn(headers, ['split_details', 'split details', 'splitdetails', 'details']),
     category: findColumn(headers, ['category', 'cat', 'type']),
     notes: findColumn(headers, ['notes', 'note', 'comment', 'remarks']),
   };
@@ -173,6 +179,8 @@ export function parseCSVText(text: string): RawCSVRow[] {
       currency: getField(fields, colMap.currency),
       paidBy: getField(fields, colMap.paidBy),
       splitAmong: getField(fields, colMap.splitAmong),
+      splitType: getField(fields, colMap.splitType),
+      splitDetails: getField(fields, colMap.splitDetails),
       category: getField(fields, colMap.category),
       notes: getField(fields, colMap.notes),
     });
@@ -255,7 +263,8 @@ export function detectAnomalies(rawRows: RawCSVRow[]): ImportResult {
     }
 
     // Check splitAmong for whitespace and case issues
-    const splitNames = row.splitAmong.split(',').map((n) => n.trim()).filter(Boolean);
+    // Support both comma-separated (old CSV) and semicolon-separated (new CSV)
+    const splitNames = row.splitAmong.split(/[,;]/).map((n) => n.trim()).filter(Boolean);
     for (const name of splitNames) {
       if (name !== name.trim()) {
         anomalies.push({
@@ -472,9 +481,10 @@ export function detectAnomalies(rawRows: RawCSVRow[]): ImportResult {
     }
 
     // --- Normalize names ---
+    // Support semicolons (new CSV) and commas (old CSV) as separators
     const paidBy = normalizeName(row.paidBy, nameMap);
     const splitAmong = row.splitAmong
-      .split(',')
+      .split(/[,;]/)
       .map((n) => normalizeName(n, nameMap))
       .filter(Boolean);
 
@@ -770,6 +780,29 @@ function parseFlexibleDate(
       action: 'AUTO_FIXED',
     });
     return new Date(year, month - 1, day);
+  }
+
+  // Try Mon-DD format e.g. "Mar-14" (month abbreviation + day, no year)
+  const monDayMatch = trimmed.match(/^([A-Za-z]{3})-(\d{1,2})$/);
+  if (monDayMatch) {
+    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const monthIndex = monthNames.indexOf(monDayMatch[1].toLowerCase());
+    const day = parseInt(monDayMatch[2]);
+    if (monthIndex !== -1) {
+      // Infer year from context — use current year
+      const inferredYear = new Date().getFullYear();
+      anomalies.push({
+        id: makeId(),
+        type: 'INCONSISTENT_DATE_FORMAT',
+        severity: 'warning',
+        rowNumbers: [rowNumber],
+        description: `Row ${rowNumber}: Date "${trimmed}" is missing a year`,
+        details: `"${trimmed}" looks like a month-day without a year (e.g. "Mar-14"). Inferred year as ${inferredYear}. Please verify this is correct.`,
+        proposedAction: `Interpreted as ${day} ${getMonthName(monthIndex + 1)} ${inferredYear} — review if wrong`,
+        action: 'NEEDS_USER_REVIEW',
+      });
+      return new Date(inferredYear, monthIndex, day);
+    }
   }
 
   // Fallback: try native Date parser
