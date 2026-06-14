@@ -640,6 +640,97 @@
     margin-top: 2px;
 }
 
+/* ── Colorful Stat Cards (Step 1 Preview) ── */
+.statsRowPreview {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-4);
+}
+
+.statCardColorful {
+    padding: var(--space-4) var(--space-3);
+    border-radius: var(--radius-xl, 18px);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-glass);
+    border: 1px solid rgba(var(--accent-500-rgb), 0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+[data-theme="dark"] .statCardColorful {
+    background: rgba(15, 15, 30, 0.4);
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+.statCardColorful:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(var(--accent-500-rgb), 0.08);
+}
+
+.statCardColorful::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.08;
+    z-index: 0;
+}
+
+[data-theme="dark"] .statCardColorful::before {
+    opacity: 0.15;
+}
+
+.statCardColorful.rows::before { background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+.statCardColorful.expenses::before { background: linear-gradient(135deg, #10b981, #3b82f6); }
+.statCardColorful.settlements::before { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.statCardColorful.anomalies::before { background: linear-gradient(135deg, #ef4444, #8b5cf6); }
+
+.statCardColorful > div {
+    position: relative;
+    z-index: 1;
+}
+
+.statValueColorful {
+    font-size: 28px;
+    font-weight: 800;
+    font-family: var(--font-display);
+    line-height: 1.1;
+    margin-bottom: 4px;
+}
+
+.statCardColorful.rows .statValueColorful { color: #4f46e5; }
+.statCardColorful.expenses .statValueColorful { color: #059669; }
+.statCardColorful.settlements .statValueColorful { color: #d97706; }
+.statCardColorful.anomalies .statValueColorful { color: #dc2626; }
+
+[data-theme="dark"] .statCardColorful.rows .statValueColorful { color: #818cf8; }
+[data-theme="dark"] .statCardColorful.expenses .statValueColorful { color: #34d399; }
+[data-theme="dark"] .statCardColorful.settlements .statValueColorful { color: #fbbf24; }
+[data-theme="dark"] .statCardColorful.anomalies .statValueColorful { color: #f87171; }
+
+.statLabelColorful {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-secondary);
+}
+
+.sectionTitleCenter {
+    font-size: var(--text-base);
+    font-weight: 800;
+    font-family: var(--font-display);
+    color: var(--fg-primary);
+    padding: var(--space-5) var(--space-4) var(--space-4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+}
+
 /* ── Data Table (preview) ── */
 .tableWrap {
     overflow-x: auto;

@@ -449,28 +449,28 @@ export default function ImportPage() {
                             <div className={styles.cardGlow} />
 
                             {/* Stats */}
-                            <div className={styles.statsRow}>
-                                <div className={styles.statCard}>
-                                    <div className={styles.statValue}>{result.totalRows}</div>
-                                    <div className={styles.statLabel}>Rows</div>
+                            <div className={styles.statsRowPreview}>
+                                <div className={`${styles.statCardColorful} ${styles.rows}`}>
+                                    <div className={styles.statValueColorful}>{result.totalRows}</div>
+                                    <div className={styles.statLabelColorful}>Rows</div>
                                 </div>
-                                <div className={styles.statCard}>
-                                    <div className={styles.statValue}>{result.stats.expenses}</div>
-                                    <div className={styles.statLabel}>Expenses</div>
+                                <div className={`${styles.statCardColorful} ${styles.expenses}`}>
+                                    <div className={styles.statValueColorful}>{result.stats.expenses}</div>
+                                    <div className={styles.statLabelColorful}>Expenses</div>
                                 </div>
-                                <div className={styles.statCard}>
-                                    <div className={styles.statValue}>{result.stats.settlements}</div>
-                                    <div className={styles.statLabel}>Settlements</div>
+                                <div className={`${styles.statCardColorful} ${styles.settlements}`}>
+                                    <div className={styles.statValueColorful}>{result.stats.settlements}</div>
+                                    <div className={styles.statLabelColorful}>Settlements</div>
                                 </div>
-                                <div className={styles.statCard}>
-                                    <div className={styles.statValue}>{result.anomalies.length}</div>
-                                    <div className={styles.statLabel}>Anomalies</div>
+                                <div className={`${styles.statCardColorful} ${styles.anomalies}`}>
+                                    <div className={styles.statValueColorful}>{result.anomalies.length}</div>
+                                    <div className={styles.statLabelColorful}>Anomalies</div>
                                 </div>
                             </div>
 
                             {/* Expense cards preview */}
-                            <div className={styles.sectionTitle}>
-                                <Eye size={16} /> Data Preview
+                            <div className={styles.sectionTitleCenter}>
+                                <Eye size={18} /> Data Preview
                             </div>
                             <div style={{ padding: '0 var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {result.parsedRows.slice(0, 10).map((row) => (
