@@ -575,69 +575,76 @@ export default function ImportPage() {
                             <div className={styles.cardGlow} />
 
                             {/* ── Header with stats ── */}
-                            <div style={{ padding: 'var(--space-4) var(--space-4) 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                            <div style={{ padding: 'var(--space-6) var(--space-4) var(--space-4)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
+                                <div style={{
+                                    width: 64, height: 64, borderRadius: '50%', 
+                                    background: 'linear-gradient(135deg, rgba(var(--accent-500-rgb), 0.2), rgba(var(--accent-400-rgb), 0.05))',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-500)',
+                                    boxShadow: '0 8px 32px rgba(var(--accent-500-rgb), 0.15)'
+                                }}>
+                                    <Shield size={32} />
+                                </div>
                                 <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                        <Shield size={16} style={{ color: 'var(--accent-500)' }} />
-                                        <span style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--fg-primary)' }}>
-                                            {result.anomalies.length} Issues Found
-                                        </span>
+                                    <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--fg-primary)', marginBottom: 4, letterSpacing: '-0.02em' }}>
+                                        {result.anomalies.length} Issues Found
                                     </div>
-                                    <div style={{ fontSize: 12, color: 'var(--fg-tertiary)' }}>
+                                    <div style={{ fontSize: 13, color: 'var(--fg-tertiary)' }}>
                                         Review &amp; confirm before importing
                                     </div>
                                 </div>
                                 {/* Quick stats chips */}
-                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8, flexShrink: 0, marginTop: 4 }}>
                                     {errors.length > 0 && (
-                                        <div style={{ padding: '4px 8px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)', fontSize: 11, fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <AlertCircle size={10} />{errors.length}
+                                        <div style={{ padding: '6px 12px', borderRadius: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)', fontSize: 12, fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <AlertCircle size={14} />{errors.length} Action Needed
                                         </div>
                                     )}
                                     {warnings.length > 0 && (
-                                        <div style={{ padding: '4px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.15)', fontSize: 11, fontWeight: 700, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <AlertTriangle size={10} />{warnings.length}
+                                        <div style={{ padding: '6px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.15)', fontSize: 12, fontWeight: 700, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <AlertTriangle size={14} />{warnings.length} Warnings
                                         </div>
                                     )}
                                     {infos.length > 0 && (
-                                        <div style={{ padding: '4px 8px', borderRadius: 8, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 11, fontWeight: 700, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <CheckCircle2 size={10} />{infos.length}
+                                        <div style={{ padding: '6px 12px', borderRadius: 12, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 12, fontWeight: 700, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <CheckCircle2 size={14} />{infos.length} Auto-fixed
                                         </div>
                                     )}
                                 </div>
                             </div>
 
                             {/* ── Tabs ── */}
-                            <div style={{ display: 'flex', gap: 0, padding: 'var(--space-3) var(--space-4) 0', borderBottom: '1px solid rgba(var(--accent-500-rgb), 0.06)' }}>
-                                {[
-                                    { key: 'action', label: 'Action Needed', count: errors.length + warnings.length, color: errors.length > 0 ? '#ef4444' : '#f59e0b' },
-                                    { key: 'autofixed', label: 'Auto-fixed', count: infos.length, color: '#22c55e' },
-                                    { key: 'all', label: 'All', count: result.anomalies.length, color: 'var(--fg-tertiary)' },
-                                ].map(tab => (
-                                    <button
-                                        key={tab.key}
-                                        onClick={() => setAnomalyTab(tab.key as typeof anomalyTab)}
-                                        style={{
-                                            flex: 1, padding: '10px 4px', background: 'none', border: 'none',
-                                            borderBottom: anomalyTab === tab.key ? `2px solid ${tab.color}` : '2px solid transparent',
-                                            fontSize: 12, fontWeight: 600, color: anomalyTab === tab.key ? tab.color : 'var(--fg-tertiary)',
-                                            cursor: 'pointer', transition: 'all 0.2s ease', fontFamily: 'var(--font-display)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                                        }}
-                                    >
-                                        {tab.label}
-                                        <span style={{
-                                            padding: '1px 6px', borderRadius: 10, fontSize: 10, fontWeight: 700,
-                                            background: anomalyTab === tab.key ? `${tab.color}20` : 'rgba(var(--accent-500-rgb), 0.06)',
-                                            color: anomalyTab === tab.key ? tab.color : 'var(--fg-tertiary)',
-                                        }}>{tab.count}</span>
-                                    </button>
-                                ))}
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: '0 var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                                <div style={{ display: 'inline-flex', flexWrap: 'wrap', justifyContent: 'center', background: 'rgba(var(--accent-500-rgb), 0.05)', padding: 4, borderRadius: 16, gap: 4, border: '1px solid rgba(var(--accent-500-rgb), 0.08)' }}>
+                                    {[
+                                        { key: 'action', label: 'Action Needed', count: errors.length + warnings.length, color: errors.length > 0 ? '#ef4444' : '#f59e0b' },
+                                        { key: 'autofixed', label: 'Auto-fixed', count: infos.length, color: '#22c55e' },
+                                        { key: 'all', label: 'All', count: result.anomalies.length, color: 'var(--fg-tertiary)' },
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.key}
+                                            onClick={() => setAnomalyTab(tab.key as typeof anomalyTab)}
+                                            style={{
+                                                padding: '8px 16px', background: anomalyTab === tab.key ? 'var(--bg-glass)' : 'transparent', border: 'none',
+                                                borderRadius: 12, boxShadow: anomalyTab === tab.key ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                                                fontSize: 13, fontWeight: 700, color: anomalyTab === tab.key ? tab.color : 'var(--fg-tertiary)',
+                                                cursor: 'pointer', transition: 'all 0.2s ease', fontFamily: 'var(--font-display)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                            }}
+                                        >
+                                            {tab.label}
+                                            <span style={{
+                                                padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 800,
+                                                background: anomalyTab === tab.key ? `${tab.color}15` : 'rgba(var(--accent-500-rgb), 0.08)',
+                                                color: anomalyTab === tab.key ? tab.color : 'var(--fg-tertiary)',
+                                            }}>{tab.count}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             {/* ── Bulk approve button for action tab ── */}
                             {anomalyTab === 'action' && warnings.length > 0 && (
-                                <div style={{ padding: 'var(--space-3) var(--space-4) 0', display: 'flex', justifyContent: 'flex-end' }}>
+                                <div style={{ padding: '0 var(--space-4) var(--space-4)', display: 'flex', justifyContent: 'center' }}>
                                     <button
                                         onClick={() => {
                                             if (!result) return;
@@ -647,13 +654,15 @@ export default function ImportPage() {
                                             setResult(updated);
                                         }}
                                         style={{
-                                            fontSize: 11, fontWeight: 600, color: '#22c55e',
-                                            background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
-                                            borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
-                                            display: 'flex', alignItems: 'center', gap: 5,
+                                            fontSize: 13, fontWeight: 700, color: '#22c55e',
+                                            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)',
+                                            borderRadius: 12, padding: '8px 20px', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', gap: 6,
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: '0 4px 12px rgba(34,197,94,0.1)'
                                         }}
                                     >
-                                        <CheckCircle2 size={11} /> Approve all warnings
+                                        <CheckCircle2 size={14} /> Approve all warnings
                                     </button>
                                 </div>
                             )}
