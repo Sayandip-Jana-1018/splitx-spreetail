@@ -104,6 +104,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [tourReady, setTourReady] = useState(false);
     // Always start false so server and client agree on initial render (prevents hydration mismatch)
     const [isDesktop, setIsDesktop] = useState(false);
+    const haptics = useHaptics();
+    const { user } = useCurrentUser();
+    const { mode } = usePerformanceMode();
 
     // Detect desktop breakpoint to conditionally render desktop sidebar
     useEffect(() => {
