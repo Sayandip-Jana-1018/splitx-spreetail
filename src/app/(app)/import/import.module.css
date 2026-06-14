@@ -819,3 +819,69 @@
     color: #22c55e;
     border: 1px solid rgba(34, 197, 94, 0.12);
 }
+
+/* -----------------------------------------------------------
+   MOBILE-FIRST ENHANCEMENTS  (= 640px)
+   ----------------------------------------------------------- */
+
+@media (max-width: 640px) {
+    .pageHeader { margin-top: var(--space-4); margin-bottom: var(--space-4); padding: 0 var(--space-4); }
+    .pageHeaderIcon { width: 52px; height: 52px; border-radius: 16px; font-size: 22px; margin-bottom: var(--space-2); }
+    .pageTitle { font-size: var(--text-lg); }
+    .pageSubtitle { font-size: 13px; padding: 0 var(--space-2); }
+    .stepper { margin-bottom: var(--space-4); padding: 0 var(--space-3); }
+    .stepCircle { width: 30px; height: 30px; font-size: 11px; }
+    .stepLine { width: 20px; }
+    .card { border-radius: 20px; margin-bottom: var(--space-3); }
+    .dropZone { padding: var(--space-6) var(--space-4); margin: var(--space-3); border-radius: 16px; }
+    .dropIcon { width: 52px; height: 52px; border-radius: 16px; margin-bottom: var(--space-3); }
+    .dropTitle { font-size: 15px; }
+    .featureCard { padding: var(--space-4) var(--space-2) var(--space-3); border-radius: 14px; }
+    .featureIcon { width: 38px; height: 38px; border-radius: 12px; font-size: 17px; margin-bottom: var(--space-2); }
+    .featureTitle { font-size: 11px; }
+    .featureDesc { display: none; }
+    .sectionTitle { font-size: 14px; padding: var(--space-4) var(--space-4) var(--space-1); }
+    .summaryRow { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: var(--space-2); gap: 6px; scrollbar-width: none; }
+    .summaryRow::-webkit-scrollbar { display: none; }
+    .summaryBadge { flex-shrink: 0; font-size: 11px; padding: 4px 10px; }
+    .anomalyList { gap: var(--space-2); padding: var(--space-3); }
+    .anomalyCard { padding: var(--space-3); border-radius: 14px; }
+    .anomalyHeader { flex-wrap: nowrap; align-items: flex-start; }
+    .anomalyBadge { font-size: 9px; padding: 2px 6px; border-radius: 5px; flex-shrink: 0; margin-top: 2px; }
+    .anomalyTitle { font-size: 13px; line-height: 1.3; }
+    .anomalyRow { font-size: 10px; flex-shrink: 0; padding: 2px 7px; border-radius: 6px; background: rgba(var(--accent-500-rgb), 0.06); border: 1px solid rgba(var(--accent-500-rgb), 0.1); }
+    .anomalyDesc { font-size: 12px; margin: var(--space-2) 0 var(--space-1); line-height: 1.55; }
+    .anomalyAction { font-size: 11px; padding: 5px 9px; }
+    .anomalyActions { gap: 8px; margin-top: var(--space-2); justify-content: flex-end; }
+    .btnApprove, .btnReject { padding: 8px 14px; border-radius: 10px; font-size: 12px; min-height: 36px; display: flex; align-items: center; gap: 5px; }
+    .statsRow { grid-template-columns: repeat(2, 1fr); gap: var(--space-2); padding: var(--space-3); }
+    .statCard { padding: var(--space-3) var(--space-2); border-radius: 12px; }
+    .statValue { font-size: var(--text-lg); }
+    .statLabel { font-size: 10px; }
+    .btnGroup { flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-4); }
+    .btnPrimary { max-width: 100%; padding: 14px 24px; font-size: 15px; border-radius: 14px; min-height: 50px; }
+    .btnSecondary { width: 100%; max-width: 100%; padding: 12px 20px; min-height: 46px; font-size: 14px; justify-content: center; }
+    .progressWrap { padding: var(--space-5) var(--space-4); gap: var(--space-3); }
+    .progressBar { max-width: 100%; }
+    .completeWrap { padding: var(--space-6) var(--space-4); }
+    .completeIcon { width: 64px; height: 64px; font-size: 28px; }
+    .completeTitle { font-size: var(--text-base); }
+    .filePreview { padding: var(--space-3); margin: var(--space-3); border-radius: 14px; gap: var(--space-2); }
+    .filePreviewIcon { width: 38px; height: 38px; border-radius: 10px; }
+    .filePreviewName { font-size: 13px; }
+    .filePreviewMeta { font-size: 11px; }
+    .tableWrap { padding: var(--space-3); }
+    .dataTable { font-size: 11px; }
+    .dataTable th, .dataTable td { padding: 8px 10px; }
+}
+
+/* iPhone SE / very small < 380px */
+@media (max-width: 380px) {
+    .pageTitle { font-size: 18px; }
+    .stepCircle { width: 26px; height: 26px; font-size: 10px; }
+    .stepLine { width: 14px; }
+    .anomalyTitle { font-size: 12px; }
+    .featureTitle { font-size: 10px; }
+    .featuresGrid { gap: var(--space-2); }
+    .btnPrimary { font-size: 14px; min-height: 46px; }
+}
